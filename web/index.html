@@ -198,10 +198,11 @@
                     : 'Empty • Click to create';
                 const statusClass = session.has_data ? 'active' : 'empty';
                 
+                const statusAttr = session.updated ? ` data-updated="${session.updated}" data-state="${session.has_data ? 'active' : 'empty'}"` : '';
                 card.innerHTML = `
                     <div class="session-icon">${icon}</div>
                     <div class="session-name">${session.name}</div>
-                    <div class="session-status ${statusClass}">${statusText}</div>
+                    <div class="session-status ${statusClass}"${statusAttr}>${statusText}</div>
                 `;
                 
                 container.appendChild(card);
@@ -209,6 +210,7 @@
             
             loading.style.display = 'none';
             container.style.display = 'grid';
+            refreshRelativeTimes();
         }
         
         function formatRelativeTime(date, now) {
@@ -226,10 +228,9 @@
             return null;
         }
 
-        function formatUpdatedText(isoString) {
+        function formatUpdatedText(isoString, now = new Date()) {
             if (!isoString) return 'Never updated';
             const date = new Date(isoString);
-            const now = new Date();
 
             const absolute = date.toLocaleString([], {
                 month: 'short',
@@ -241,7 +242,21 @@
             const relative = formatRelativeTime(date, now);
             return relative ? `${absolute} (${relative})` : absolute;
         }
-        
+
+        function refreshRelativeTimes() {
+            const now = new Date();
+            document.querySelectorAll('.session-status[data-updated]').forEach(statusEl => {
+                const iso = statusEl.getAttribute('data-updated');
+                if (!iso) return;
+                const state = statusEl.getAttribute('data-state');
+                const prefix = state === 'active' ? 'Active' : 'Empty';
+                const text = state === 'active'
+                    ? `Active • ${formatUpdatedText(iso, now)}`
+                    : 'Empty • Click to create';
+                statusEl.textContent = text;
+            });
+        }
+
         function openSession(sessionId) {
             window.location.href = `session.html?id=${sessionId}`;
         }
@@ -254,7 +269,10 @@
         }
         
         // Load sessions on page load
-        document.addEventListener('DOMContentLoaded', loadSessions);
+        document.addEventListener('DOMContentLoaded', () => {
+            loadSessions();
+            setInterval(refreshRelativeTimes, 60000);
+        });
     </script>
 </body>
 </html>
