@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cache Session - dill.dev</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        header {
+            background: #2d2d2d;
+            padding: 1rem 2rem;
+            border-bottom: 1px solid #404040;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        
+        .back-btn {
+            background: #3a3a3a;
+            color: #e0e0e0;
+            border: 1px solid #505050;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+        
+        .back-btn:hover {
+            background: #4a4a4a;
+        }
+        
+        .header-top {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            width: 100%;
+        }
+        
+        .title-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+        }
+        
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 500;
+            color: #4a9eff;
+        }
+        
+        .session-id {
+            color: #888;
+            font-size: 0.9rem;
+        }
+        
+        main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 1.5rem 2rem;
+            overflow: hidden;
+            gap: 1rem;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        button {
+            background: #3a3a3a;
+            color: #e0e0e0;
+            border: 1px solid #505050;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+        
+        button:hover {
+            background: #4a4a4a;
+            border-color: #606060;
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        button.primary {
+            background: #4a9eff;
+            border-color: #4a9eff;
+            color: white;
+            font-weight: 500;
+        }
+        
+        button.primary:hover:not(:disabled) {
+            background: #3d8ae6;
+        }
+        
+        button.danger {
+            background: #d32f2f;
+            border-color: #d32f2f;
+            color: white;
+        }
+        
+        button.danger:hover:not(:disabled) {
+            background: #b71c1c;
+        }
+        
+        .status {
+            margin-left: auto;
+            font-size: 0.85rem;
+            color: #888;
+        }
+        
+        .status.success {
+            color: #66bb6a;
+        }
+        
+        .status.error {
+            color: #ef5350;
+        }
+        
+        .status.persistent {
+            color: #66bb6a;
+        }
+        
+        #textarea-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        
+        textarea {
+            flex: 1;
+            background: #252525;
+            color: #e0e0e0;
+            border: 1px solid #404040;
+            border-radius: 4px;
+            padding: 1rem;
+            font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            resize: none;
+            outline: none;
+        }
+        
+        textarea:focus {
+            border-color: #4a9eff;
+        }
+        
+        .char-count {
+            margin-top: 0.5rem;
+            font-size: 0.8rem;
+            color: #666;
+            text-align: right;
+        }
+        
+        footer {
+            padding: 1rem 2rem;
+            text-align: center;
+            font-size: 0.8rem;
+            color: #666;
+            border-top: 1px solid #404040;
+        }
+        
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(26, 26, 26, 0.95);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            backdrop-filter: blur(8px);
+        }
+        
+        .modal-overlay.hidden {
+            display: none;
+        }
+        
+        .modal {
+            background: #2d2d2d;
+            padding: 2rem;
+            border-radius: 8px;
+            border: 1px solid #404040;
+            max-width: 500px;
+            width: 90%;
+        }
+        
+        .modal h2 {
+            margin-bottom: 1rem;
+            color: #4a9eff;
+        }
+        
+        .modal p {
+            margin-bottom: 1.5rem;
+            color: #ccc;
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+        
+        .modal input {
+            width: 100%;
+            background: #252525;
+            color: #e0e0e0;
+            border: 1px solid #404040;
+            padding: 0.75rem;
+            border-radius: 4px;
+            font-size: 1rem;
+            margin-bottom: 1rem;
+            font-family: "Monaco", "Menlo", monospace;
+        }
+        
+        .modal input:focus {
+            outline: none;
+            border-color: #4a9eff;
+        }
+        
+        .password-display {
+            background: #1a1a1a;
+            border: 2px solid #4a9eff;
+            padding: 1rem;
+            border-radius: 4px;
+            margin: 1rem 0;
+            text-align: center;
+        }
+        
+        .password-display .label {
+            font-size: 0.8rem;
+            color: #888;
+            margin-bottom: 0.5rem;
+        }
+        
+        .password-display .password {
+            font-size: 1.5rem;
+            color: #4a9eff;
+            font-weight: 600;
+            font-family: "Monaco", "Menlo", monospace;
+            letter-spacing: 0.05em;
+        }
+        
+        .warning {
+            background: #d32f2f;
+            color: white;
+            padding: 0.75rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            margin-top: 1rem;
+        }
+        
+        .error-message {
+            color: #ef5350;
+            font-size: 0.85rem;
+            margin-top: 0.5rem;
+        }
+        
+        .modal-buttons {
+            display: flex;
+            gap: 0.75rem;
+            margin-top: 1.5rem;
+        }
+        
+        .modal-buttons button {
+            flex: 1;
+        }
+        
+        .password-banner {
+            display: none;
+            align-items: center;
+            gap: 0.75rem;
+            width: 100%;
+            background: #242424;
+            border: 1px solid #3a3a3a;
+            border-radius: 6px;
+            padding: 0.6rem 0.9rem;
+            flex-wrap: wrap;
+        }
+        
+        .password-banner .password-label {
+            color: #888;
+            font-size: 0.9rem;
+        }
+        
+        .password-banner .password-code {
+            background: #1a1a1a;
+            color: #4a9eff;
+            padding: 0.35rem 0.85rem;
+            border-radius: 4px;
+            font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
+            font-size: 0.95rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            border: 1px solid #333;
+        }
+        
+        .password-banner .copy-password-btn {
+            background: #4a9eff;
+            color: white;
+            border: none;
+            padding: 0.45rem 0.85rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .password-banner .copy-password-btn:hover {
+            background: #3d8ae6;
+        }
+
+        .password-reminder {
+            display: none;
+            margin-top: 0.35rem;
+            color: #ffa726;
+            font-size: 0.85rem;
+        }
+        
+    </style>
+</head>
+<body>
+    <div id="passwordModal" class="modal-overlay">
+        <div class="modal">
+            <h2 id="modalTitle">Enter Encryption Key</h2>
+            <p id="modalMessage">Enter the encryption key to unlock this session</p>
+            <div id="passwordDisplay" class="password-display" style="display: none;">
+                <div class="label">Your Session Encryption Key</div>
+                <div class="password" id="generatedPassword"></div>
+            </div>
+            <div id="passwordInputContainer"><input type="text" id="passwordInput" placeholder="Enter encryption key"></div>
+            <div id="passwordError" class="error-message" style="display: none;"></div>
+            <div class="modal-buttons">
+                <button onclick="window.location.href='index.html'">Cancel</button>
+                <button class="primary" onclick="unlockSession()" id="unlockBtn">Unlock</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="lockScreen" class="modal-overlay hidden">
+        <div class="modal">
+            <h2>🔒 Session Locked</h2>
+            <p>Locked due to 10 minutes of inactivity</p>
+            <button class="primary" onclick="unlock()" style="width: 100%; padding: 0.75rem;">Click to Unlock</button>
+        </div>
+    </div>
+
+    <header>
+        <div class="header-top">
+            <a href="index.html" class="back-btn" id="backLink">← Back</a>
+            <div class="title-group">
+                <h1 id="sessionName">Cache Session</h1>
+            </div>
+        </div>
+        <div id="passwordBanner" class="password-banner">
+            <span class="password-label">Encryption Key:</span>
+            <code class="password-code" id="sessionPasswordDisplay"></code>
+            <button class="copy-password-btn" onclick="copyPassword()" title="Copy encryption key to clipboard">
+                📋 Copy Key
+            </button>
+        </div>
+        <div id="passwordReminder" class="password-reminder" role="status" aria-live="polite"></div>
+    </header>
+    
+    <main>
+        <div id="textarea-container">
+            <textarea id="cacheText" placeholder="Session locked. Enter encryption key to access..." disabled></textarea>
+            <div class="char-count" id="charCount">0 characters</div>
+        </div>
+        
+        <div class="controls">
+            <button class="primary" onclick="saveCache()" id="saveBtn" disabled>💾 Save</button>
+            <button onclick="loadCache()" id="reloadBtn" disabled title="Reload latest encrypted data (use after editing on another device)">🔄 Reload</button>
+            <button onclick="copyToClipboard()" id="copyBtn" disabled>📋 Copy Content</button>
+            <button class="danger" onclick="clearCache()" id="clearBtn" disabled>🗑️ Clear</button>
+            <span class="status" id="status"></span>
+        </div>
+    </main>
+    
+    <footer>
+        Last saved: <span id="lastSaved">Never</span> | Auto-saves 2s after typing | Auto-locks after 10 minutes
+    </footer>
+
+    <script>
+        // Session state
+        let sessionId = null;
+        let sessionPassword = null;
+        let encryptionKey = null;
+        let sessionSalt = null;
+        let lastActivity = Date.now();
+        let autoSaveTimer = null;
+        let lockCheckTimer = null;
+        let statusClearTimer = null;
+        let remindOnExit = false;
+        let passwordCopied = false;
+        const KEY_REMINDER_MESSAGE = 'Copy or save this session encryption key. Without it the encrypted data cannot be decrypted later.';
+        const LOCK_TIMEOUT = 10 * 60 * 1000; // 10 minutes
+        const AUTO_SAVE_DELAY = 2000;
+        
+        // Word lists for encryption key generation
+        const RANDOM_WORDS = [
+            'apple', 'amber', 'anchor', 'arctic', 'aurora', 'basil', 'blizzard', 'boulder',
+            'cascade', 'cedar', 'citadel', 'cosmos', 'crimson', 'dagger', 'delta', 'ember',
+            'falcon', 'forest', 'galaxy', 'glacier', 'harbor', 'helios', 'horizon', 'ivory',
+            'jasper', 'juniper', 'kepler', 'lagoon', 'lantern', 'lilac', 'lunar', 'matrix',
+            'meadow', 'nebula', 'onyx', 'opal', 'orbit', 'pioneer', 'plasma', 'prairie',
+            'quartz', 'quasar', 'raptor', 'rift', 'saffron', 'saturn', 'serpent', 'solstice',
+            'tidal', 'topaz', 'umbra', 'utopia', 'vector', 'velvet', 'vesper', 'violet',
+            'wander', 'willow', 'xenon', 'yonder', 'zephyr', 'zenith', 'zircon', 'zodiac'
+        ];
+        
+
+        function updatePasswordReminder() {
+            const reminder = document.getElementById('passwordReminder');
+            if (!reminder) return;
+            if (remindOnExit) {
+                reminder.textContent = KEY_REMINDER_MESSAGE;
+                reminder.style.display = 'block';
+            } else {
+                reminder.textContent = '';
+                reminder.style.display = 'none';
+            }
+        }
+
+        function copyPassword() {
+            const password = sessionPassword;
+            if (!password) {
+                showStatus("No key to copy", "error");
+                return;
+            }
+             
+            navigator.clipboard.writeText(password).then(() => {
+                passwordCopied = true;
+                remindOnExit = false;
+                updatePasswordReminder();
+                showStatus("Encryption key copied to clipboard", "success");
+            }).catch(err => {
+                showStatus("Failed to copy key", "error");
+            });
+        }
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', init);
+        window.addEventListener('beforeunload', (event) => {
+            if (remindOnExit) {
+                event.preventDefault();
+                event.returnValue = KEY_REMINDER_MESSAGE;
+                return KEY_REMINDER_MESSAGE;
+            }
+        });
+        
+        function init() {
+            const params = new URLSearchParams(window.location.search);
+            sessionId = params.get('id');
+            
+            if (!sessionId) {
+                alert('No session ID provided');
+                window.location.href = 'index.html';
+                return;
+            }
+            
+            document.getElementById('sessionName').textContent = sessionId.replace('-', ' ').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+            
+            checkSessionStatus();
+            
+            document.getElementById('passwordInput').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') unlockSession();
+            });
+            
+            document.getElementById('cacheText').addEventListener('input', () => {
+                updateActivity();
+                updateCharCount();
+                scheduleAutoSave();
+            });
+
+            const backLink = document.getElementById('backLink');
+            backLink.addEventListener('click', (event) => {
+                if (remindOnExit && !confirm(KEY_REMINDER_MESSAGE + '\n\nLeave this session without saving the key?')) {
+                    event.preventDefault();
+                }
+            });
+        }
+        
+        async function checkSessionStatus() {
+            try {
+                const response = await fetch(`/api/cache/${sessionId}`);
+                if (!response.ok) throw new Error('Failed to load session');
+                
+                const data = await response.json();
+                sessionSalt = data.salt || sessionSalt || `cache-salt-${sessionId}`;
+                
+                if (data.has_data) {
+                    // Existing session - ask for password
+                    showPasswordPrompt(false);
+                } else {
+                    // New empty session - generate password and go directly to edit
+                    const password = generatePassword();
+                    await deriveEncryptionKey(password);
+                    
+                    // Show password in banner
+                    revealPassword(password, true);
+                    
+                    // Hide modal, enable interface
+                    document.getElementById('passwordModal').classList.add('hidden');
+                    enableInterface();
+                    startLockTimer();
+                    
+                    // Load (empty) content
+                    await loadCache();
+                }
+            } catch (error) {
+                showError('Error loading session: ' + error.message);
+            }
+        }
+        
+        function showPasswordPrompt(isNewSession) {
+            const modal = document.getElementById('passwordModal');
+            const title = document.getElementById('modalTitle');
+            const message = document.getElementById('modalMessage');
+            const passwordDisplay = document.getElementById('passwordDisplay');
+            const passwordInput = document.getElementById('passwordInput');
+            const unlockBtn = document.getElementById('unlockBtn');
+            const passwordError = document.getElementById('passwordError');
+
+            passwordError.style.display = 'none';
+            passwordError.textContent = '';
+            
+            if (isNewSession) {
+                const password = generatePassword();
+                sessionPassword = password;
+                
+                title.textContent = 'New Session Created';
+                message.innerHTML = "<strong>Save this encryption key!</strong> You'll need it to access this session. If you lose it, the data is permanently unrecoverable.";
+                document.getElementById('generatedPassword').textContent = password;
+                passwordDisplay.style.display = 'block';
+                passwordInput.value = password;
+                document.getElementById('passwordInputContainer').style.display = 'none';
+                passwordInput.readOnly = true;
+                unlockBtn.textContent = 'Start Using Session';
+            } else {
+                title.textContent = 'Enter Encryption Key';
+                message.textContent = 'This session contains encrypted data. Enter the encryption key to unlock it.';
+                passwordDisplay.style.display = 'none';
+                passwordInput.value = '';
+                passwordInput.readOnly = false;
+                document.getElementById('passwordInputContainer').style.display = 'block';
+                passwordInput.focus();
+                unlockBtn.textContent = 'Unlock';
+            }
+            
+            modal.classList.remove('hidden');
+        }
+        
+        function pickRandomWord() {
+            return RANDOM_WORDS[Math.floor(Math.random() * RANDOM_WORDS.length)];
+        }
+
+        function generatePassword() {
+            const sessionWords = sessionId.split('-');
+            let randomWordOne = pickRandomWord();
+            let randomWordTwo = pickRandomWord();
+            if (RANDOM_WORDS.length > 1) {
+                while (randomWordTwo === randomWordOne) {
+                    randomWordTwo = pickRandomWord();
+                }
+            }
+            const randomNum = Math.floor(10000 + Math.random() * 90000);
+            return `${sessionWords[0]}-${sessionWords[1]}-${randomWordOne}-${randomWordTwo}-${randomNum}`;
+        }
+
+        function revealPassword(password, remind = true) {
+            sessionPassword = password;
+            passwordCopied = false;
+            remindOnExit = remind;
+            document.getElementById('sessionPasswordDisplay').textContent = password;
+            document.getElementById('passwordBanner').style.display = 'flex';
+            updatePasswordReminder();
+        }
+
+        function formatStatusTime(date) {
+            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        }
+        
+        async function unlockSession() {
+            const password = document.getElementById('passwordInput').value.trim();
+            
+            if (!password) {
+                showPasswordError('Please enter an encryption key');
+                return;
+            }
+            
+            try {
+                await deriveEncryptionKey(password);
+                await loadCache();
+                
+                // Show password in banner
+                revealPassword(password, false);
+                
+                document.getElementById('passwordModal').classList.add('hidden');
+                enableInterface();
+                startLockTimer();
+            } catch (error) {
+                showPasswordError('Incorrect key or decryption failed');
+                sessionPassword = null;
+                encryptionKey = null;
+            }
+        }
+        
+        function showPasswordError(message) {
+            const errorDiv = document.getElementById('passwordError');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+        
+        async function deriveEncryptionKey(password) {
+            const encoder = new TextEncoder();
+            const keyMaterial = await crypto.subtle.importKey(
+                'raw',
+                encoder.encode(password),
+                'PBKDF2',
+                false,
+                ['deriveBits', 'deriveKey']
+            );
+            
+            if (!sessionSalt) {
+                sessionSalt = `cache-salt-${sessionId}`;
+            }
+            const salt = encoder.encode(sessionSalt);
+            
+            encryptionKey = await crypto.subtle.deriveKey(
+                {
+                    name: 'PBKDF2',
+                    salt: salt,
+                    iterations: 100000,
+                    hash: 'SHA-256'
+                },
+                keyMaterial,
+                { name: 'AES-GCM', length: 256 },
+                false,
+                ['encrypt', 'decrypt']
+            );
+        }
+        
+        async function encryptContent(plaintext) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(plaintext);
+            const iv = crypto.getRandomValues(new Uint8Array(12));
+            
+            const encrypted = await crypto.subtle.encrypt(
+                { name: 'AES-GCM', iv: iv },
+                encryptionKey,
+                data
+            );
+            
+            return {
+                encrypted: arrayBufferToBase64(encrypted),
+                iv: arrayBufferToBase64(iv)
+            };
+        }
+        
+        async function decryptContent(encryptedBase64, ivBase64) {
+            if (!encryptedBase64 || !ivBase64) return '';
+            
+            const encrypted = base64ToArrayBuffer(encryptedBase64);
+            const iv = base64ToArrayBuffer(ivBase64);
+            
+            const decrypted = await crypto.subtle.decrypt(
+                { name: 'AES-GCM', iv: iv },
+                encryptionKey,
+                encrypted
+            );
+            
+            const decoder = new TextDecoder();
+            return decoder.decode(decrypted);
+        }
+        
+        function arrayBufferToBase64(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            for (let i = 0; i < bytes.length; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary);
+        }
+        
+        function base64ToArrayBuffer(base64) {
+            const binary = atob(base64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+        
+        async function loadCache() {
+            updateActivity();
+            try {
+                const response = await fetch(`/api/cache/${sessionId}`);
+                if (!response.ok) throw new Error('Failed to load');
+                
+                const data = await response.json();
+                sessionSalt = data.salt || sessionSalt || `cache-salt-${sessionId}`;
+                
+                if (data.has_data && data.encrypted_content) {
+                    const decrypted = await decryptContent(data.encrypted_content, data.iv);
+                    document.getElementById('cacheText').value = decrypted;
+                    
+                    if (data.updated) {
+                        const date = new Date(data.updated);
+                        document.getElementById('lastSaved').textContent = date.toLocaleString();
+                    }
+                } else {
+                    document.getElementById('cacheText').value = '';
+                }
+                
+                updateCharCount();
+                showStatus('Loaded', 'success');
+            } catch (error) {
+                showStatus('Error loading: ' + error.message, 'error');
+                throw error;
+            }
+        }
+        
+        async function saveCache(isAutoSave = false) {
+            updateActivity();
+            const content = document.getElementById('cacheText').value;
+            
+            try {
+                let encryptedData = null;
+                let iv = null;
+                
+                if (content.trim().length > 0) {
+                    const encrypted = await encryptContent(content);
+                    encryptedData = encrypted.encrypted;
+                    iv = encrypted.iv;
+                }
+                
+                const response = await fetch(`/api/cache/${sessionId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        encrypted_content: encryptedData,
+                        salt: sessionSalt,
+                        iv: iv
+                    })
+                });
+                
+                if (!response.ok) throw new Error('Failed to save');
+                
+                const data = await response.json();
+                if (data.updated) {
+                    const date = new Date(data.updated);
+                    document.getElementById('lastSaved').textContent = date.toLocaleString();
+                    const label = isAutoSave ? 'Auto-saved' : 'Saved';
+                    showStatus(`${label} · ${formatStatusTime(date)}`, 'success', true);
+                } else {
+                    const label = isAutoSave ? 'Auto-save skipped (no content)' : 'Cleared';
+                    showStatus(label);
+                }
+            } catch (error) {
+                showStatus('Error saving: ' + error.message, 'error');
+            }
+        }
+        
+        async function copyToClipboard() {
+            updateActivity();
+            const text = document.getElementById('cacheText').value;
+            
+            try {
+                await navigator.clipboard.writeText(text);
+                showStatus('Content copied to clipboard', 'success');
+            } catch (error) {
+                showStatus('Error copying content: ' + error.message, 'error');
+            }
+        }
+        
+        async function clearCache() {
+            updateActivity();
+            if (!confirm('Are you sure you want to clear this session? This will delete all content permanently.')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/cache/${sessionId}/reset`, {
+                    method: 'POST'
+                });
+                
+                if (!response.ok) throw new Error('Failed to reset');
+                
+                // Redirect to index page to show session is now empty
+                remindOnExit = false;
+                updatePasswordReminder();
+                window.location.href = 'index.html';
+            } catch (error) {
+                showStatus('Error clearing: ' + error.message, 'error');
+            }
+        }
+        
+        function enableInterface() {
+            const textarea = document.getElementById('cacheText');
+            textarea.disabled = false;
+            textarea.placeholder = 'Paste your text snippets here...';
+            document.getElementById('saveBtn').disabled = false;
+            document.getElementById('reloadBtn').disabled = false;
+            document.getElementById('copyBtn').disabled = false;
+            document.getElementById('clearBtn').disabled = false;
+            
+            requestAnimationFrame(() => {
+                textarea.focus();
+                const len = textarea.value.length;
+                textarea.setSelectionRange(len, len);
+            });
+        }
+
+        function disableInterface() {
+            const textarea = document.getElementById('cacheText');
+            textarea.disabled = true;
+            textarea.placeholder = 'Session locked. Enter encryption key to access...';
+            document.getElementById('saveBtn').disabled = true;
+            document.getElementById('reloadBtn').disabled = true;
+            document.getElementById('copyBtn').disabled = true;
+            document.getElementById('clearBtn').disabled = true;
+        }
+        
+        function updateActivity() {
+            lastActivity = Date.now();
+        }
+        
+        function updateCharCount() {
+            const text = document.getElementById('cacheText').value;
+            document.getElementById('charCount').textContent = text.length + ' characters';
+        }
+        
+        function scheduleAutoSave() {
+            clearTimeout(autoSaveTimer);
+            autoSaveTimer = setTimeout(() => {
+                saveCache(true);
+            }, AUTO_SAVE_DELAY);
+        }
+        
+        function startLockTimer() {
+            lockCheckTimer = setInterval(() => {
+                const inactiveDuration = Date.now() - lastActivity;
+                if (inactiveDuration > LOCK_TIMEOUT) {
+                    lockScreen();
+                }
+            }, 5000);
+        }
+        
+        function lockScreen() {
+            const lockOverlay = document.getElementById('lockScreen');
+            if (!lockOverlay.classList.contains('hidden')) {
+                return;
+            }
+
+            clearTimeout(autoSaveTimer);
+            autoSaveTimer = null;
+
+            document.getElementById('cacheText').value = '';
+            updateCharCount();
+            disableInterface();
+
+            sessionPassword = null;
+            encryptionKey = null;
+
+            document.getElementById('sessionPasswordDisplay').textContent = '';
+            document.getElementById('passwordBanner').style.display = 'none';
+
+            remindOnExit = false;
+            passwordCopied = false;
+            updatePasswordReminder();
+
+            showStatus('Session locked due to inactivity');
+            lockOverlay.classList.remove('hidden');
+        }
+        
+        function unlock() {
+            document.getElementById('lockScreen').classList.add('hidden');
+            showPasswordPrompt(false);
+            updateActivity();
+        }
+        
+        function showStatus(message, type = '', persist = false) {
+            const status = document.getElementById('status');
+            if (statusClearTimer) {
+                clearTimeout(statusClearTimer);
+                statusClearTimer = null;
+            }
+            status.textContent = message;
+            status.className = 'status ' + type + (persist ? ' persistent' : '');
+            
+            if (!persist) {
+                statusClearTimer = setTimeout(() => {
+                    status.textContent = '';
+                    status.className = 'status';
+                    statusClearTimer = null;
+                }, 3000);
+            }
+        }
+    </script>
+</body>
+</html>
