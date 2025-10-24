@@ -1,9 +1,8 @@
 from flask import Flask, request, jsonify
-import traceback
-from order_calculations import calculate_orders
-from flask_cors import CORS 
+from flask_cors import CORS
 import logging
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 import os
 import json
 from datetime import datetime
@@ -11,22 +10,21 @@ import secrets
 import fcntl
 from contextlib import contextmanager
 
+BASE_DIR = Path(__file__).resolve().parent
+CACHE_FILE = BASE_DIR / 'cache_data.json'
+LOG_DIR = BASE_DIR / 'logs'
+
 app = Flask(__name__)
-CORS(app)  # Enable CORS on the app
+CORS(app)
 
-# Setup logging
-if not os.path.exists('logs'):
-    os.mkdir('logs')
-file_handler = RotatingFileHandler('logs/myflaskapp.log', maxBytes=10240, backupCount=10)
-file_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'))
-file_handler.setLevel(logging.INFO)
-app.logger.addHandler(file_handler)
-
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+log_path = LOG_DIR / 'encrypted-scratchpad.log'
+handler = RotatingFileHandler(log_path, maxBytes=10240, backupCount=10)
+handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'))
+handler.setLevel(logging.INFO)
+app.logger.addHandler(handler)
 app.logger.setLevel(logging.INFO)
-app.logger.info('My Flask app startup')
 
-# Multi-session cache configuration
-CACHE_FILE = '/home/ubuntu/myflaskapp/cache_data.json'
 SESSION_IDS = [
     'blue-river',
     'green-forest',
@@ -37,7 +35,7 @@ SESSION_IDS = [
     'orange-sunset',
     'pink-cloud',
     'brown-earth',
-    'gray-storm'
+    'gray-storm',
 ]
 
 def default_session_record():
@@ -46,37 +44,40 @@ def default_session_record():
         'salt': None,
         'iv': None,
         'updated': None,
-        'has_data': False
+        'has_data': False,
     }
-
 
 def generate_salt():
     return secrets.token_hex(16)
 
-
 @contextmanager
 def locked_file(path, mode, lock_type):
-    with open(path, mode) as f:
-        fcntl.flock(f, lock_type)
+    with open(path, mode) as handle:
+        fcntl.flock(handle, lock_type)
         try:
-            yield f
+            yield handle
         finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
-
+            fcntl.flock(handle, fcntl.LOCK_UN)
 
 def write_json_atomic(path, data):
     serialized = json.dumps(data, indent=2)
-    with open(path, 'w') as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
+    with open(path, 'w') as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
         try:
-            f.write(serialized)
-            f.write('\n')
-            f.flush()
-            os.fsync(f.fileno())
+            handle.write(serialized)
+            handle.write('\n')
+            handle.flush()
+            os.fsync(handle.fileno())
         finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
+            fcntl.flock(handle, fcntl.LOCK_UN)
 
-def ensure_cache_schema(cache):
+def ensure_cache_file():
+    if not CACHE_FILE.exists():
+        initial = {sid: default_session_record() for sid in SESSION_IDS}
+        write_json_atomic(CACHE_FILE, initial)
+        app.logger.info('Initialized cache file at %s', CACHE_FILE)
+
+def normalize_schema(cache):
     updated = False
     normalized = {}
     for session_id in SESSION_IDS:
@@ -85,202 +86,127 @@ def ensure_cache_schema(cache):
             record = default_session_record()
             updated = True
         else:
-            if 'encrypted_content' not in record:
-                record['encrypted_content'] = None
-                updated = True
-            if 'salt' not in record:
-                record['salt'] = None
-                updated = True
-            if 'iv' not in record:
-                record['iv'] = None
-                updated = True
-            if 'updated' not in record:
-                record['updated'] = None
-                updated = True
-            if 'has_data' not in record:
-                record['has_data'] = False
-                updated = True
+            for key in ('encrypted_content', 'salt', 'iv', 'updated', 'has_data'):
+                if key not in record:
+                    record[key] = None if key != 'has_data' else False
+                    updated = True
         normalized[session_id] = record
     if set(cache.keys()) - set(SESSION_IDS):
         updated = True
     return normalized, updated
 
-def init_cache_file():
-    """Initialize cache file with empty sessions if it doesn't exist"""
-    if not os.path.exists(CACHE_FILE):
-        empty_cache = {}
-        for session_id in SESSION_IDS:
-            empty_cache[session_id] = default_session_record()
-        write_json_atomic(CACHE_FILE, empty_cache)
-        app.logger.info('Initialized multi-session cache file')
-
 def load_cache():
-    """Load cache data from file"""
-    init_cache_file()
-    with locked_file(CACHE_FILE, 'r', fcntl.LOCK_SH) as f:
-        cache = json.load(f)
-    normalized_cache, needs_update = ensure_cache_schema(cache)
+    ensure_cache_file()
+    with locked_file(CACHE_FILE, 'r', fcntl.LOCK_SH) as handle:
+        cache = json.load(handle)
+    normalized, needs_update = normalize_schema(cache)
     if needs_update:
-        save_cache(normalized_cache)
-    return normalized_cache
+        write_json_atomic(CACHE_FILE, normalized)
+    return normalized
 
-def save_cache(data):
-    """Save cache data to file"""
-    write_json_atomic(CACHE_FILE, data)
+def save_cache(cache):
+    write_json_atomic(CACHE_FILE, cache)
 
 @app.route('/api/cache/sessions', methods=['GET'])
-def get_sessions():
-    """Get list of all sessions with metadata (no content)"""
+def list_sessions():
     try:
         cache = load_cache()
         sessions = []
         for session_id in SESSION_IDS:
-            session = cache.get(session_id, {})
+            record = cache.get(session_id, default_session_record())
             sessions.append({
                 'id': session_id,
                 'name': session_id.replace('-', ' ').title(),
-                'has_data': session.get('has_data', False),
-                'updated': session.get('updated')
+                'has_data': record.get('has_data', False),
+                'updated': record.get('updated'),
             })
         return jsonify({'sessions': sessions})
-    except Exception as e:
-        app.logger.error('Sessions list error: %s', str(e))
-        return jsonify({'error': str(e)}), 500
+    except Exception as exc:
+        app.logger.exception('Failed to list sessions')
+        return jsonify({'error': str(exc)}), 500
 
 @app.route('/api/cache/<session_id>', methods=['GET'])
 def get_session(session_id):
-    """Get encrypted data for a specific session"""
+    if session_id not in SESSION_IDS:
+        return jsonify({'error': 'Invalid session ID'}), 404
     try:
-        if session_id not in SESSION_IDS:
-            return jsonify({'error': 'Invalid session ID'}), 404
-        
         cache = load_cache()
-        session = cache.get(session_id)
-
-        updated = False
-        if session is None:
-            session = default_session_record()
-            cache[session_id] = session
-            updated = True
-        if session.get('salt') is None:
-            session['salt'] = generate_salt()
-            updated = True
-        if updated:
+        record = cache.get(session_id, default_session_record())
+        if record.get('salt') is None:
+            record['salt'] = generate_salt()
+            cache[session_id] = record
             save_cache(cache)
-        
         return jsonify({
-            'encrypted_content': session.get('encrypted_content'),
-            'salt': session.get('salt'),
-            'iv': session.get('iv'),
-            'updated': session.get('updated'),
-            'has_data': session.get('has_data', False)
+            'encrypted_content': record.get('encrypted_content'),
+            'salt': record.get('salt'),
+            'iv': record.get('iv'),
+            'updated': record.get('updated'),
+            'has_data': record.get('has_data', False),
         })
-    except Exception as e:
-        app.logger.error('Session GET error (%s): %s', session_id, str(e))
-        return jsonify({'error': str(e)}), 500
+    except Exception as exc:
+        app.logger.exception('Failed to load session %s', session_id)
+        return jsonify({'error': str(exc)}), 500
 
 @app.route('/api/cache/<session_id>', methods=['POST'])
 def save_session(session_id):
-    """Save encrypted data for a specific session"""
+    if session_id not in SESSION_IDS:
+        return jsonify({'error': 'Invalid session ID'}), 404
     try:
-        if session_id not in SESSION_IDS:
-            return jsonify({'error': 'Invalid session ID'}), 404
-        
-        data = request.json
-        encrypted_content = data.get('encrypted_content')
-        iv = data.get('iv')
-        
-        cache = load_cache()
-        session = cache.get(session_id, default_session_record())
+        payload = request.json or {}
+        encrypted_content = payload.get('encrypted_content')
+        iv = payload.get('iv')
+        salt = payload.get('salt')
 
-        if session.get('salt') is None:
-            incoming_salt = data.get('salt')
-            if incoming_salt:
-                session['salt'] = incoming_salt
-            else:
-                session['salt'] = generate_salt()
-        elif session.get('salt') != data.get('salt') and data.get('salt'):
-            # Honor existing encrypted data generated with legacy clients
-            session['salt'] = data.get('salt')
-        
-        # Determine if session has data
-        has_data = encrypted_content is not None and len(encrypted_content) > 0
-        
-        session.update({
+        cache = load_cache()
+        record = cache.get(session_id, default_session_record())
+
+        if record.get('salt') is None:
+            record['salt'] = salt or generate_salt()
+        elif salt:
+            record['salt'] = salt
+
+        has_data = bool(encrypted_content)
+        record.update({
             'encrypted_content': encrypted_content,
             'iv': iv,
             'updated': datetime.utcnow().isoformat() if has_data else None,
-            'has_data': has_data
+            'has_data': has_data,
         })
-        cache[session_id] = session
-        
+        cache[session_id] = record
         save_cache(cache)
-        
-        app.logger.info('Session saved: %s (has_data: %s)', session_id, has_data)
-        
-        return jsonify({
-            'success': True,
-            'updated': cache[session_id]['updated'],
-            'has_data': has_data
-        })
-    except Exception as e:
-        app.logger.error('Session POST error (%s): %s', session_id, str(e))
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': True, 'updated': record['updated'], 'has_data': has_data})
+    except Exception as exc:
+        app.logger.exception('Failed to save session %s', session_id)
+        return jsonify({'error': str(exc)}), 500
 
 @app.route('/api/cache/<session_id>/reset', methods=['POST'])
 def reset_session(session_id):
-    """Reset a session (admin endpoint, requires basic auth from nginx)"""
+    if session_id not in SESSION_IDS:
+        return jsonify({'error': 'Invalid session ID'}), 404
     try:
-        if session_id not in SESSION_IDS:
-            return jsonify({'error': 'Invalid session ID'}), 404
-        
         cache = load_cache()
         cache[session_id] = default_session_record()
         save_cache(cache)
-        
-        app.logger.info('Session reset: %s', session_id)
-        
-        return jsonify({'success': True, 'message': f'Session {session_id} has been reset'})
-    except Exception as e:
-        app.logger.error('Session reset error (%s): %s', session_id, str(e))
-        return jsonify({'error': str(e)}), 500
-
+        app.logger.info('Reset session %s', session_id)
+        return jsonify({'success': True})
+    except Exception as exc:
+        app.logger.exception('Failed to reset session %s', session_id)
+        return jsonify({'error': str(exc)}), 500
 
 @app.route('/api/cache-admin/reset-all', methods=['POST'])
-def reset_all_sessions():
-    """Reset all sessions (admin endpoint)"""
+def reset_all():
     try:
-        cache = load_cache()
-        for session_id in SESSION_IDS:
-            cache[session_id] = default_session_record()
+        cache = {sid: default_session_record() for sid in SESSION_IDS}
         save_cache(cache)
-
-        app.logger.info('All sessions reset by admin')
-
-        return jsonify({'success': True, 'message': 'All sessions have been reset'})
-    except Exception as e:
-        app.logger.error('Reset all error: %s', str(e))
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/calculate_orders', methods=['POST'])
-def order_calc_api():
-    try:
-        data = request.json
-        current_price = float(data['current_price'])
-        target_price = float(data['target_price'])
-        total_amount = float(data['total_amount'])
-        num_orders = int(data['num_orders'])
-        scale = float(data['scale'])
-
-        results = calculate_orders(current_price, target_price, total_amount, num_orders, scale)
-        return jsonify(results)
-    except Exception as e:
-        app.logger.error('Unhandled Exception: %s', traceback.format_exc())
-        return jsonify({'error': str(e)}), 500
+        app.logger.info('Reset all sessions')
+        return jsonify({'success': True})
+    except Exception as exc:
+        app.logger.exception('Failed to reset all sessions')
+        return jsonify({'error': str(exc)}), 500
 
 @app.route('/api/')
-def index():
-    return 'API Home'
+def api_root():
+    return jsonify({'message': 'encrypted-scratchpad API'})
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=8000)
