@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cache Admin - dill.dev/cache</title>
+    <style>
+        :root {
+            color-scheme: dark;
+        }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #121212;
+            color: #e0e0e0;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        header {
+            margin-bottom: 2rem;
+        }
+        h1 {
+            font-size: 2rem;
+            font-weight: 600;
+            color: #4a9eff;
+            margin: 0 0 0.5rem 0;
+        }
+        .intro {
+            background: #1f1f1f;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 1rem 1.5rem;
+            margin-bottom: 2rem;
+            line-height: 1.6;
+        }
+        .intro strong {
+            color: #fff;
+        }
+        .actions {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
+        button {
+            background: #4a9eff;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+            font-size: 0.95rem;
+            transition: background 0.2s ease;
+        }
+        button:hover:not(:disabled) {
+            background: #3c89dc;
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        button.danger {
+            background: #d9534f;
+        }
+        button.danger:hover:not(:disabled) {
+            background: #c94440;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #1c1c1c;
+            border: 1px solid #333;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        th, td {
+            padding: 0.85rem 1rem;
+            border-bottom: 1px solid #2a2a2a;
+            text-align: left;
+            font-size: 0.95rem;
+        }
+        th {
+            background: #252525;
+            font-weight: 600;
+            color: #b3d8ff;
+        }
+        tr:last-child td {
+            border-bottom: none;
+        }
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.25rem 0.6rem;
+            border-radius: 999px;
+            font-size: 0.85rem;
+            background: #2f2f2f;
+        }
+        .status-pill.active {
+            background: #2f5131;
+            color: #8be28f;
+        }
+        .status-pill.empty {
+            background: #343434;
+            color: #c0c0c0;
+        }
+        .message {
+            margin-top: 1rem;
+            padding: 0.75rem 1rem;
+            border-radius: 6px;
+            display: none;
+            font-size: 0.9rem;
+        }
+        .message.success {
+            background: #1f3d27;
+            color: #8be28f;
+            display: block;
+        }
+        .message.error {
+            background: #3d1f1f;
+            color: #ff9a9a;
+            display: block;
+        }
+        .timestamp {
+            font-size: 0.85rem;
+            color: #9c9c9c;
+        }
+        .cta-link {
+            color: #4a9eff;
+            text-decoration: none;
+        }
+        .cta-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Cache Admin</h1>
+            <p><a class="cta-link" href="index.html">← Back to sessions</a></p>
+        </header>
+
+        <section class="intro">
+            <p><strong>Reset a session when its encryption key is lost.</strong> This permanently deletes the encrypted blob; the next visit to that session will issue a brand-new key and empty pad.</p>
+            <p>These controls require dedicated Basic Auth credentials (<code>cache-admin</code>) and are separate from other dill.dev auth pairs.</p>
+        </section>
+
+        <div class="actions">
+            <button id="refreshBtn">🔄 Refresh Sessions</button>
+            <button id="resetAllBtn" class="danger">🗑️ Reset All Sessions</button>
+            <span class="timestamp" id="lastUpdated"></span>
+        </div>
+
+        <div class="message" id="messageBox"></div>
+
+        <table id="sessionsTable">
+            <thead>
+                <tr>
+                    <th>Session</th>
+                    <th>Status</th>
+                    <th>Last Updated</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        const tableBody = document.querySelector('#sessionsTable tbody');
+        const refreshBtn = document.getElementById('refreshBtn');
+        const resetAllBtn = document.getElementById('resetAllBtn');
+        const messageBox = document.getElementById('messageBox');
+        const lastUpdated = document.getElementById('lastUpdated');
+
+        function showMessage(text, type = 'success') {
+            messageBox.textContent = text;
+            messageBox.className = `message ${type}`;
+        }
+
+        function clearMessage() {
+            messageBox.textContent = '';
+            messageBox.className = 'message';
+        }
+
+        function formatDate(isoString) {
+            if (!isoString) return 'Never';
+            const date = new Date(isoString);
+            return date.toLocaleString();
+        }
+
+        function renderSessions(sessions) {
+            tableBody.innerHTML = '';
+            sessions.forEach(session => {
+                const tr = document.createElement('tr');
+
+                const nameCell = document.createElement('td');
+                nameCell.textContent = session.name;
+                tr.appendChild(nameCell);
+
+                const statusCell = document.createElement('td');
+                const pill = document.createElement('span');
+                pill.className = 'status-pill ' + (session.has_data ? 'active' : 'empty');
+                pill.textContent = session.has_data ? 'Has data' : 'Empty';
+                statusCell.appendChild(pill);
+                tr.appendChild(statusCell);
+
+                const updatedCell = document.createElement('td');
+                updatedCell.textContent = formatDate(session.updated);
+                tr.appendChild(updatedCell);
+
+                const actionsCell = document.createElement('td');
+                const resetBtn = document.createElement('button');
+                resetBtn.className = 'danger';
+                resetBtn.textContent = 'Reset';
+                resetBtn.addEventListener('click', () => resetSession(session.id, session.name));
+                actionsCell.appendChild(resetBtn);
+                tr.appendChild(actionsCell);
+
+                tableBody.appendChild(tr);
+            });
+        }
+
+        async function fetchSessions() {
+            clearMessage();
+            refreshBtn.disabled = true;
+            resetAllBtn.disabled = true;
+            try {
+                const response = await fetch('/api/cache/sessions', { credentials: 'include' });
+                if (!response.ok) throw new Error('Failed to fetch sessions');
+                const data = await response.json();
+                renderSessions(data.sessions);
+                lastUpdated.textContent = `Last refreshed ${new Date().toLocaleTimeString()}`;
+            } catch (error) {
+                showMessage(error.message, 'error');
+            } finally {
+                refreshBtn.disabled = false;
+                resetAllBtn.disabled = false;
+            }
+        }
+
+        async function resetSession(id, name) {
+            const confirmed = confirm(`Reset ${name}? This permanently deletes its encrypted data.`);
+            if (!confirmed) return;
+
+            try {
+                const response = await fetch(`/api/cache/${id}/reset`, {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    throw new Error(err.error || 'Reset failed');
+                }
+                showMessage(`Session ${name} has been reset.`);
+                fetchSessions();
+            } catch (error) {
+                showMessage(error.message, 'error');
+            }
+        }
+
+        async function resetAll() {
+            const confirmed = confirm('Reset ALL sessions? This wipes every encrypted blob.');
+            if (!confirmed) return;
+
+            try {
+            const response = await fetch('/api/cache-admin/reset-all', {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    throw new Error(err.error || 'Reset failed');
+                }
+                showMessage('All sessions have been reset.');
+                fetchSessions();
+            } catch (error) {
+                showMessage(error.message, 'error');
+            }
+        }
+
+        refreshBtn.addEventListener('click', fetchSessions);
+        resetAllBtn.addEventListener('click', resetAll);
+
+        fetchSessions();
+    </script>
+</body>
+</html>
