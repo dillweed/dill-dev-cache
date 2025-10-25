@@ -464,14 +464,6 @@
         
         // Initialize
         document.addEventListener('DOMContentLoaded', init);
-        window.addEventListener('beforeunload', (event) => {
-            if (remindOnExit) {
-                event.preventDefault();
-                event.returnValue = KEY_REMINDER_MESSAGE;
-                return KEY_REMINDER_MESSAGE;
-            }
-        });
-        
         function init() {
             const params = new URLSearchParams(window.location.search);
             sessionId = params.get('id');
